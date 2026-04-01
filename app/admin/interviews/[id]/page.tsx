@@ -53,7 +53,7 @@ export default function InterviewDetailPage() {
     );
   }
 
-  const { interview, transcript } = data;
+  const { interview, transcript = [] } = data;
 
   return (
     <div className="space-y-6">

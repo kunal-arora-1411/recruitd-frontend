@@ -22,7 +22,7 @@ export default function AdminAssessmentPage() {
     ])
       .then(([assessmentData, interviewData]) => {
         setAssessment(assessmentData);
-        setTranscript(interviewData.transcript);
+        setTranscript(interviewData.transcript || []);
       })
       .catch(console.error)
       .finally(() => setLoading(false));

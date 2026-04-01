@@ -56,7 +56,7 @@ function ScoreBar({
 
 interface AssessmentViewProps {
   assessment: Assessment;
-  transcript: TranscriptEntry[];
+  transcript?: TranscriptEntry[];
   title?: string;
   subtitle?: string;
   backHref?: string;
@@ -65,7 +65,7 @@ interface AssessmentViewProps {
 
 export function AssessmentView({
   assessment,
-  transcript,
+  transcript = [],
   title = "Candidate Assessment",
   subtitle = "AI-generated performance analysis",
   backHref,
@@ -218,7 +218,7 @@ export function AssessmentView({
         </Card>
       </div>
 
-      {transcript.length > 0 && (
+      {transcript && transcript.length > 0 && (
         <Card className="shadow-sm">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-sm">

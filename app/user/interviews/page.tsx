@@ -80,6 +80,19 @@ export default function RecruiterInterviewsPage() {
     }
   }, []);
 
+  const handleComplete = async (iid: string) => {
+    try {
+      await fetch("/api/proxy/api/interview/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interviewId: iid }),
+      });
+      fetchInterviews(true);
+    } catch (err) {
+      console.error("Failed to complete interview:", err);
+    }
+  };
+
   useEffect(() => {
     fetchInterviews();
   }, [fetchInterviews]);
@@ -191,15 +204,25 @@ export default function RecruiterInterviewsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 gap-1.5 text-xs"
+                          className="h-7 gap-1.5 text-xs text-primary"
                         >
                           <FileText className="h-3.5 w-3.5" />
-                          View
+                          View Report
                         </Button>
                       </Link>
+                    ) : (interview.status === "completed" || interview.status === "active") ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleComplete(interview._id)}
+                        className="h-7 px-2 text-[10px] gap-1.5"
+                      >
+                        <FileText className="h-3 w-3" />
+                        Generate Report
+                      </Button>
                     ) : (
                       <span className="text-[10px] text-muted-foreground">
-                        Pending
+                        {interview.status}
                       </span>
                     )}
                   </TableCell>

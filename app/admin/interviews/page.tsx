@@ -88,6 +88,19 @@ export default function InterviewsPage() {
     return () => window.removeEventListener("focus", onFocus);
   }, [fetchInterviews]);
 
+  const handleComplete = async (iid: string) => {
+    try {
+      await fetch("/api/proxy/api/interview/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ interviewId: iid }),
+      });
+      fetchInterviews(true);
+    } catch (err) {
+      console.error("Failed to complete interview:", err);
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -179,12 +192,24 @@ export default function InterviewsPage() {
                     {formatDate(interview.startedAt)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-1">
+                    <div className="flex justify-end items-center gap-1">
+                      {!interview.assessmentId && (interview.status === "completed" || interview.status === "active") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleComplete(interview._id)}
+                          className="h-7 px-2 text-[10px] gap-1.5"
+                        >
+                          <FileText className="h-3 w-3" />
+                          Generate Report
+                        </Button>
+                      )}
                       <Link href={`/admin/interviews/${interview._id}`}>
                         <Button
                           variant="ghost"
                           size="sm"
                           className="h-7 w-7 p-0"
+                          title="View Transcript"
                         >
                           <Eye className="h-3.5 w-3.5" />
                         </Button>
@@ -195,8 +220,9 @@ export default function InterviewsPage() {
                             variant="ghost"
                             size="sm"
                             className="h-7 w-7 p-0"
+                            title="View Report"
                           >
-                            <FileText className="h-3.5 w-3.5" />
+                            <FileText className="h-3.5 w-3.5 text-primary" />
                           </Button>
                         </Link>
                       )}
