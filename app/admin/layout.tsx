@@ -15,6 +15,7 @@ import {
   Moon,
   LogOut,
   BriefcaseBusiness,
+  ChevronRight,
 } from "lucide-react";
 
 const navItems = [
@@ -42,19 +43,24 @@ export default function AdminLayout({
   return (
     <div className="flex min-h-screen bg-background">
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 z-30 flex h-screen w-56 flex-col border-r border-border bg-sidebar">
-        <div className="flex h-14 items-center gap-2 px-5">
-          <div className="flex h-6 w-6 items-center justify-center rounded bg-primary text-primary-foreground">
-            <BriefcaseBusiness className="h-3.5 w-3.5" />
+      <aside className="fixed left-0 top-0 z-30 flex h-screen w-64 flex-col border-r border-border/50 bg-sidebar/50 backdrop-blur-xl">
+        <div className="flex h-16 items-center gap-3 px-6">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg primary-gradient text-primary-foreground shadow-md shadow-primary/20">
+            <BriefcaseBusiness className="h-4 w-4" />
           </div>
-          <span className="text-sm font-semibold tracking-tight text-sidebar-foreground">
+          <span className="text-base font-bold tracking-tight text-sidebar-foreground">
             RecruitDesk
           </span>
         </div>
 
-        <Separator />
+        <div className="px-4 py-4">
+          <div className="rounded-xl bg-muted/50 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70">Admin Workspace</p>
+            <p className="mt-0.5 text-xs font-medium text-foreground/80 truncate">Enterprise Control</p>
+          </div>
+        </div>
 
-        <nav className="flex-1 space-y-1 px-3 py-4">
+        <nav className="flex-1 space-y-1 px-3 py-2">
           {navItems.map((item) => {
             const isActive =
               pathname === item.href ||
@@ -63,49 +69,55 @@ export default function AdminLayout({
             return (
               <Link key={item.href} href={item.href}>
                 <div
-                  className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-xs font-medium transition-colors ${
+                  className={`group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
                     isActive
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                      ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
                   }`}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.label}
+                  <item.icon className={`h-4.5 w-4.5 transition-colors ${isActive ? "text-primary-foreground" : "text-muted-foreground/70 group-hover:text-primary"}`} />
+                  <span className="flex-1">{item.label}</span>
+                  {isActive && (
+                    <ChevronRight className="h-3.5 w-3.5 opacity-70" />
+                  )}
                 </div>
               </Link>
             );
           })}
         </nav>
 
-        <div className="border-t border-border px-3 py-3 space-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleTheme}
-            className="w-full justify-start gap-2 text-xs text-muted-foreground"
-          >
-            {theme === "dark" ? (
-              <Sun className="h-3.5 w-3.5" />
-            ) : (
-              <Moon className="h-3.5 w-3.5" />
-            )}
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleLogout}
-            className="w-full justify-start gap-2 text-xs text-muted-foreground"
-          >
-            <LogOut className="h-3.5 w-3.5" />
-            Logout
-          </Button>
+        <div className="mt-auto space-y-2 p-4">
+          <div className="rounded-2xl border border-border/50 bg-muted/30 p-4">
+            <p className="text-xs font-semibold">Pro Plan</p>
+            <p className="mt-1 text-[10px] text-muted-foreground leading-relaxed">Your organization is on the enterprise tier.</p>
+          </div>
+          
+          <div className="flex flex-col gap-1">
+            <button
+              onClick={toggleTheme}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+              <span>{theme === "dark" ? "Light theme" : "Dark theme"}</span>
+            </button>
+            <button
+              onClick={handleLogout}
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-medium text-destructive/80 transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <LogOut className="h-4 w-4" />
+              <span>Logout</span>
+            </button>
+          </div>
         </div>
       </aside>
 
       {/* Main content */}
-      <main className="ml-56 flex-1">
-        <div className="mx-auto max-w-6xl px-8 py-8">{children}</div>
+      <main className="ml-64 flex-1">
+        <div className="mx-auto max-w-6xl px-8 py-8 animate-in fade-in slide-in-from-bottom-2 duration-700">{children}</div>
       </main>
     </div>
   );
