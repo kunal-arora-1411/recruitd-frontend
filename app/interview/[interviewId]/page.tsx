@@ -28,6 +28,8 @@ import {
   AudioLines,
   Phone,
   BriefcaseBusiness,
+  Paperclip,
+  X,
 } from "lucide-react";
 
 type ViewState = "setup" | "chat" | "voice" | "phone" | "completed";
@@ -57,6 +59,10 @@ export default function InterviewPage() {
   const [phoneCallActive, setPhoneCallActive] = useState(false);
   const [phoneStatus, setPhoneStatus] = useState<string | null>(null);
   const [startError, setStartError] = useState("");
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
+  const [resumeText, setResumeText] = useState<string | null>(null);
+  const [parsingResume, setParsingResume] = useState(false);
+  const [resumeError, setResumeError] = useState("");
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +82,24 @@ export default function InterviewPage() {
     }
   }, [messages]);
 
+  const handleResumeChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setResumeFile(file);
+    setResumeText(null);
+    setResumeError("");
+    setParsingResume(true);
+    try {
+      const result = await api.parseResume(file);
+      setResumeText(result.resumeText);
+    } catch (err) {
+      setResumeError("Could not parse resume. You can still proceed without it.");
+      setResumeFile(null);
+    } finally {
+      setParsingResume(false);
+    }
+  };
+
   const handleStart = async () => {
     if (!candidateName.trim()) return;
     if (interviewMode === "phone" && !phoneNumber.trim()) return;
@@ -87,6 +111,7 @@ export default function InterviewPage() {
         candidateName.trim(),
         interviewMode,
         interviewMode === "phone" ? phoneNumber.trim() : undefined,
+        resumeText ?? undefined,
       );
       setInterviewId(result.interview._id);
       if (interviewMode === "voice") {
@@ -303,6 +328,44 @@ export default function InterviewPage() {
               />
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Resume <span className="text-muted-foreground/60">(optional)</span>
+              </label>
+              {!resumeFile ? (
+                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0" />
+                  <span>Upload PDF or image</span>
+                  <input
+                    type="file"
+                    accept=".pdf,image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={handleResumeChange}
+                  />
+                </label>
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+                  <Paperclip className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="flex-1 truncate text-xs">{resumeFile.name}</span>
+                  {parsingResume ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                  ) : resumeText ? (
+                    <span className="text-[10px] text-green-600">Parsed</span>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => { setResumeFile(null); setResumeText(null); setResumeError(""); }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              )}
+              {resumeError && (
+                <p className="text-[10px] text-destructive">{resumeError}</p>
+              )}
+            </div>
+
             <div className="flex flex-wrap gap-1.5">
               <Badge variant="outline" className="text-[10px]">
                 {template.config.difficulty}
@@ -364,6 +427,7 @@ export default function InterviewPage() {
               disabled={
                 !candidateName.trim() ||
                 starting ||
+                parsingResume ||
                 (interviewMode === "phone" && !phoneNumber.trim())
               }
               className="w-full gap-2"

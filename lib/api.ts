@@ -116,11 +116,32 @@ export const api = {
 
   getCurrentRecruiter: () => apiFetch<CurrentRecruiter>("/api/recruiter/me"),
 
+  // Resume
+  parseResume: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (API_SECRET) headers["Authorization"] = `Bearer ${API_SECRET}`;
+    const identity = getIdentityToken();
+    if (identity) headers["x-recruitdesk-identity"] = identity;
+    return fetch(`${API_BASE}/api/resume/parse`, {
+      method: "POST",
+      headers,
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error(error.error || `API error: ${res.status}`);
+      }
+      return res.json() as Promise<{ resumeText: string }>;
+    });
+  },
+
   // Interviews
-  startInterview: (templateId: string, candidateName: string, mode: 'text' | 'voice' | 'phone' = 'text', phoneNumber?: string) =>
+  startInterview: (templateId: string, candidateName: string, mode: 'text' | 'voice' | 'phone' = 'text', phoneNumber?: string, resumeText?: string) =>
     apiFetch<StartInterviewResponse>("/api/interview/start", {
       method: "POST",
-      body: JSON.stringify({ templateId, candidateName, mode, ...(phoneNumber ? { phoneNumber } : {}) }),
+      body: JSON.stringify({ templateId, candidateName, mode, ...(phoneNumber ? { phoneNumber } : {}), ...(resumeText ? { resumeText } : {}) }),
     }),
 
   sendMessage: (interviewId: string, content: string) =>
