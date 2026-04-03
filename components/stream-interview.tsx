@@ -79,7 +79,6 @@ export function StreamInterview({
   const endTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const audioLevelFrameRef = useRef<number>(0);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const localInterruptFramesRef = useRef(0);
   const suppressPlaybackRef = useRef(false);
   const micChunkCountRef = useRef(0);
   // Holds server-sent error message so onclose can show it even before React re-renders
@@ -394,23 +393,13 @@ export function StreamInterview({
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN)
           return;
 
-        if (statusRef.current === "ai_speaking") {
-          if (rms >= 0.035) {
-            localInterruptFramesRef.current += 1;
-            if (localInterruptFramesRef.current >= 2) {
-              stopPlayback("local");
-              statusRef.current = "listening";
-              setStatus("listening");
-            }
-          } else {
-            localInterruptFramesRef.current = 0;
-          }
-        } else {
-          localInterruptFramesRef.current = 0;
-        }
-
         // Always send audio — even during AI speech — so the server can
         // detect interruptions and maintain turn-taking awareness.
+        //
+        // Do NOT locally mute playback based on microphone RMS here.
+        // In practice that heuristic was too sensitive and could suppress
+        // perfectly valid AI audio because of room noise / echo / laptop mic
+        // bleed. The backend already has the authoritative interruption logic.
         wsRef.current.send(new Uint8Array(pcmBuffer.slice(0)));
       };
 
@@ -559,10 +548,10 @@ export function StreamInterview({
 
         case "ai_speaking":
           console.log("[Stream] Server: ai_speaking");
-          localInterruptFramesRef.current = 0;
           suppressPlaybackRef.current = false;
           statusRef.current = "ai_speaking";
           setStatus("ai_speaking");
+          setLiveTranscript("");
           setAudioLevel(0); // Reset mic indicator while AI speaks
           break;
 
@@ -628,7 +617,6 @@ export function StreamInterview({
         }
 
         case "interruption":
-          localInterruptFramesRef.current = 0;
           stopPlayback("server");
           statusRef.current = "listening";
           setStatus("listening");

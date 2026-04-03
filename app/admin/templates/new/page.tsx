@@ -39,6 +39,7 @@ export default function NewTemplatePage() {
   const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const [generated, setGenerated] = useState<TemplateGenerated | null>(null);
   const [editableTitle, setEditableTitle] = useState("");
   const [editableDescription, setEditableDescription] = useState("");
@@ -49,6 +50,7 @@ export default function NewTemplatePage() {
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
+    setError("");
     setGenerating(true);
     try {
       const result = await api.generateTemplate(prompt);
@@ -57,6 +59,12 @@ export default function NewTemplatePage() {
       setEditableDescription(result.description);
     } catch (error) {
       console.error(error);
+      setGenerated(null);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to generate template. Please try again.",
+      );
     } finally {
       setGenerating(false);
     }
@@ -64,6 +72,7 @@ export default function NewTemplatePage() {
 
   const handleSave = async () => {
     if (!generated) return;
+    setError("");
     setSaving(true);
     try {
       await api.saveTemplate({
@@ -79,6 +88,11 @@ export default function NewTemplatePage() {
       router.push("/admin/templates");
     } catch (error) {
       console.error(error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save template. Please try again.",
+      );
     } finally {
       setSaving(false);
     }
@@ -117,6 +131,11 @@ export default function NewTemplatePage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              {error}
+            </div>
+          )}
           <Textarea
             placeholder={`You can write anything here. Examples:
 
@@ -494,7 +513,10 @@ export default function NewTemplatePage() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setGenerated(null)}
+                onClick={() => {
+                  setGenerated(null);
+                  setError("");
+                }}
                 className="text-xs"
               >
                 Discard
