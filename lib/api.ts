@@ -213,6 +213,7 @@ export interface SaveTemplatePayload {
   llmProvider?: LLMProvider;
   sttProvider?: STTProvider;
   ttsProvider?: TTSProvider;
+  duration?: number;
   publicTemplate?: boolean;
 }
 
@@ -225,6 +226,7 @@ export interface JobTemplate {
   llmProvider: LLMProvider;
   sttProvider: STTProvider;
   ttsProvider: TTSProvider;
+  duration?: number;
   publicTemplate?: boolean;
   createdAt: string;
   interviewsCount?: number;

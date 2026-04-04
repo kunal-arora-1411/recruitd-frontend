@@ -44,8 +44,9 @@ export default function NewTemplatePage() {
   const [editableTitle, setEditableTitle] = useState("");
   const [editableDescription, setEditableDescription] = useState("");
   const [llmProvider, setLlmProvider] = useState<LLMProvider>("gemini");
-  const [sttProvider, setSttProvider] = useState<STTProvider>("deepgram");
+  const [sttProvider, setSttProvider] = useState<STTProvider>("sarvam");
   const [ttsProvider, setTtsProvider] = useState<TTSProvider>("deepgram");
+  const [duration, setDuration] = useState<number | "">(30);
   const [publicTemplate, setPublicTemplate] = useState(true);
 
   const handleGenerate = async () => {
@@ -83,6 +84,7 @@ export default function NewTemplatePage() {
         llmProvider,
         sttProvider,
         ttsProvider,
+        duration: duration !== "" ? duration : undefined,
         publicTemplate,
       });
       router.push("/admin/templates");
@@ -209,6 +211,33 @@ export default function NewTemplatePage() {
                 onChange={(e) => setEditableDescription(e.target.value)}
                 className="min-h-[60px] text-xs"
               />
+            </div>
+
+            {/* Duration */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground">
+                Interview Duration (minutes)
+              </label>
+              <p className="text-[10px] text-muted-foreground">
+                The AI will deliver a closing statement and auto-end the interview when time is up. Leave blank for no limit.
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder="e.g. 30"
+                  value={duration}
+                  onChange={(e) =>
+                    setDuration(e.target.value === "" ? "" : Math.max(1, parseInt(e.target.value) || 1))
+                  }
+                  className="w-28 text-xs"
+                />
+                {duration !== "" && (
+                  <span className="text-[10px] text-muted-foreground">
+                    Auto-ends after {duration} min
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
