@@ -46,6 +46,7 @@ interface StreamInterviewProps {
   template: JobTemplate;
   candidateName: string;
   onEnd: (assessmentId?: string) => void;
+  wsUrlOverride?: string;
 }
 
 export function StreamInterview({
@@ -53,6 +54,7 @@ export function StreamInterview({
   template,
   candidateName,
   onEnd,
+  wsUrlOverride,
 }: StreamInterviewProps) {
   const [status, setStatus] = useState<VoiceStatus>("connecting");
   const [isMuted, setIsMuted] = useState(false);
@@ -109,7 +111,7 @@ export function StreamInterview({
     // Without this flag, closing a CONNECTING socket fires onerror spuriously.
     let active = true;
 
-    const wsUrl = getStreamWSUrl(interviewId);
+    const wsUrl = wsUrlOverride ?? getStreamWSUrl(interviewId);
     const ws = new WebSocket(wsUrl);
     ws.binaryType = "arraybuffer";
     wsRef.current = ws;

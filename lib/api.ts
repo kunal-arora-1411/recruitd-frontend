@@ -50,6 +50,12 @@ export const api = {
       body: JSON.stringify({ prompt }),
     }),
 
+  createTemplateFromPrompt: (data: CreateTemplateFromPromptPayload) =>
+    apiFetch<JobTemplate>("/api/template/create-from-prompt", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   saveTemplate: (data: SaveTemplatePayload) =>
     apiFetch<JobTemplate>("/api/template", {
       method: "POST",
@@ -166,6 +172,39 @@ export const api = {
   // Stats
   getStats: () => apiFetch<DashboardStats>("/api/stats"),
 
+  // Invites (HR system integration)
+  createInvite: (data: {
+    templateId: string;
+    candidateName?: string;
+    candidateEmail?: string;
+    resumeText?: string;
+    expiresInDays?: number;
+  }) =>
+    apiFetch<CreateInviteResponse>("/api/interview/invite", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getInvite: (token: string) =>
+    fetch(`${API_BASE}/api/interview/invite/${token}`).then(async (res) => {
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error(error.error || `API error: ${res.status}`);
+      }
+      return res.json() as Promise<InviteInfo>;
+    }),
+
+  activateInvite: (token: string) =>
+    fetch(`${API_BASE}/api/interview/invite/${token}/activate`, {
+      method: "POST",
+    }).then(async (res) => {
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: "Request failed" }));
+        throw new Error(error.error || `API error: ${res.status}`);
+      }
+      return res.json() as Promise<InviteActivateResponse>;
+    }),
+
   // Phone
   initiatePhoneCall: (interviewId: string) =>
     apiFetch<{ message: string; callSid: string; interviewId: string }>("/api/phone/call", {
@@ -204,6 +243,14 @@ export interface TemplateGenerated {
 export type LLMProvider = "mistral" | "gemini";
 export type STTProvider = "deepgram" | "openai" | "elevenlabs" | "elevenlabs-realtime" | "cartesia" | "sarvam" | "voxtral-realtime" | "voxtral-batch";
 export type TTSProvider = "deepgram" | "openai" | "elevenlabs" | "cartesia" | "sarvam" | "voxtral";
+
+export interface CreateTemplateFromPromptPayload {
+  prompt: string;
+  duration?: number;
+  llmProvider?: LLMProvider;
+  sttProvider?: STTProvider;
+  ttsProvider?: TTSProvider;
+}
 
 export interface SaveTemplatePayload {
   title: string;
@@ -359,6 +406,42 @@ export function getStreamWSUrl(interviewId: string): string {
   }
   const query = params.toString();
   return `${wsBase}/api/stream/${interviewId}${query ? `?${query}` : ""}`;
+}
+
+/**
+ * WebSocket URL for candidate invite sessions — authenticates with inviteToken
+ * instead of the API secret (candidates never have the API secret).
+ */
+export function getInviteStreamWSUrl(interviewId: string, inviteToken: string): string {
+  const httpBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
+  const wsBase = httpBase.replace(/^http/, "ws");
+  const params = new URLSearchParams({ token: inviteToken });
+  return `${wsBase}/api/stream/${interviewId}?${params.toString()}`;
+}
+
+export interface InviteInfo {
+  candidateName: string;
+  candidateEmail: string | null;
+  status: string;
+  expiresAt: string | null;
+  template: {
+    title: string;
+    description: string;
+    difficulty: string;
+    duration: number | null;
+  };
+}
+
+export interface InviteActivateResponse {
+  interviewId: string;
+  inviteToken: string;
+}
+
+export interface CreateInviteResponse {
+  interview: Interview;
+  inviteToken: string;
+  interviewUrl: string;
+  expiresAt: string;
 }
 
 export interface PhoneCallStatus {
