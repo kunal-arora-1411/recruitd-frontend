@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   // Next.js forwards the request server-side to the real backend URL.
   async rewrites() {
     const backendUrl =
-      process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
+      process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
     return [
       {
         source: "/api/proxy/:path*",
