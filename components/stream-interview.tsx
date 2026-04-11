@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getStreamWSUrl, type JobTemplate } from "@/lib/api";
+import type { AgentState } from "@livekit/components-react";
+import { AgentAudioVisualizerAura } from "@/components/agent-audio-visualizer-aura";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
 import { Card } from "@/components/ui/card";
@@ -19,7 +21,6 @@ import {
   Mic,
   MicOff,
   PhoneOff,
-  Volume2,
   Loader2,
   AudioLines,
   BriefcaseBusiness,
@@ -83,6 +84,8 @@ export function StreamInterview({
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const suppressPlaybackRef = useRef(false);
   const micChunkCountRef = useRef(0);
+  const analyserNodeRef = useRef<AnalyserNode | null>(null);
+  const aiVolumeRafRef = useRef<number | null>(null);
   // Holds server-sent error message so onclose can show it even before React re-renders
   const serverErrorRef = useRef<string | null>(null);
 
@@ -211,8 +214,14 @@ export function StreamInterview({
       const ctx = new AudioContext({ sampleRate: 16000 });
       playbackCtxRef.current = ctx;
       const gain = ctx.createGain();
-      gain.connect(ctx.destination);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+
+      gain.connect(analyser);
+      analyser.connect(ctx.destination);
+
       gainNodeRef.current = gain;
+      analyserNodeRef.current = analyser;
       nextPlaybackTimeRef.current = 0;
     }
     // Resume if suspended by browser autoplay policy
@@ -251,7 +260,11 @@ export function StreamInterview({
       }
 
       const newGain = ctx.createGain();
-      newGain.connect(ctx.destination);
+      if (analyserNodeRef.current) {
+        newGain.connect(analyserNodeRef.current);
+      } else {
+        newGain.connect(ctx.destination);
+      }
       gainNodeRef.current = newGain;
     }
 
@@ -310,6 +323,29 @@ export function StreamInterview({
     },
     [ensurePlaybackContext],
   );
+
+  const updateAiPlaybackVolume = useCallback(() => {
+    if (statusRef.current === "ai_speaking" && analyserNodeRef.current) {
+      const dataArray = new Float32Array(analyserNodeRef.current.fftSize);
+      analyserNodeRef.current.getFloatTimeDomainData(dataArray);
+      let sumSquares = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sumSquares += dataArray[i] * dataArray[i];
+      }
+      if (dataArray.length > 0) {
+        const rms = Math.sqrt(sumSquares / dataArray.length);
+        setAudioLevel(Math.min(1, rms * 5));
+      }
+    }
+    aiVolumeRafRef.current = requestAnimationFrame(updateAiPlaybackVolume);
+  }, []);
+
+  useEffect(() => {
+    aiVolumeRafRef.current = requestAnimationFrame(updateAiPlaybackVolume);
+    return () => {
+      if (aiVolumeRafRef.current) cancelAnimationFrame(aiVolumeRafRef.current);
+    };
+  }, [updateAiPlaybackVolume]);
 
   // ─── Microphone Capture ────────────────────────────────────────────
 
@@ -388,7 +424,9 @@ export function StreamInterview({
         // Throttle UI updates to ~15fps
         audioLevelFrameRef.current++;
         if (audioLevelFrameRef.current % 3 === 0) {
-          setAudioLevel(isMutedRef.current ? 0 : Math.min(1, rms * 5));
+          if (statusRef.current !== "ai_speaking") {
+            setAudioLevel(isMutedRef.current ? 0 : Math.min(1, rms * 5));
+          }
         }
 
         if (isMutedRef.current) return;
@@ -554,7 +592,6 @@ export function StreamInterview({
           statusRef.current = "ai_speaking";
           setStatus("ai_speaking");
           setLiveTranscript("");
-          setAudioLevel(0); // Reset mic indicator while AI speaks
           break;
 
         case "ai_response_text":
@@ -646,7 +683,11 @@ export function StreamInterview({
             activeSourcesRef.current.clear();
             // Recreate gain node for next response
             const newGain = playbackCtxRef.current.createGain();
-            newGain.connect(playbackCtxRef.current.destination);
+            if (analyserNodeRef.current) {
+              newGain.connect(analyserNodeRef.current);
+            } else {
+              newGain.connect(playbackCtxRef.current.destination);
+            }
             gainNodeRef.current = newGain;
           }
           nextPlaybackTimeRef.current = 0;
@@ -767,6 +808,10 @@ export function StreamInterview({
       playbackCtxRef.current.close();
       playbackCtxRef.current = null;
     }
+    if (aiVolumeRafRef.current) {
+      cancelAnimationFrame(aiVolumeRafRef.current);
+      aiVolumeRafRef.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -774,6 +819,25 @@ export function StreamInterview({
   };
 
   // ─── Status Display Helpers ────────────────────────────────────────
+
+  const mapStatusToAgentState = (s: VoiceStatus): AgentState => {
+    switch (s) {
+      case "connecting":
+        return "connecting";
+      case "ready":
+      case "listening":
+        return "listening";
+      case "ai_speaking":
+        return "speaking";
+      case "ai_thinking":
+        return "thinking";
+      case "ending":
+      case "ended":
+      case "error":
+      default:
+        return "disconnected";
+    }
+  };
 
   const getStatusText = () => {
     switch (status) {
@@ -795,27 +859,6 @@ export function StreamInterview({
         return "Error";
       default:
         return "";
-    }
-  };
-
-  const getOrbClasses = () => {
-    const base =
-      "relative flex h-28 w-28 items-center justify-center rounded-full transition-all duration-500";
-    switch (status) {
-      case "ai_speaking":
-        return `${base} bg-primary/15 shadow-[0_0_40px_rgba(29,78,216,0.3)] scale-110`;
-      case "listening":
-        return `${base} bg-green-500/10 shadow-[0_0_30px_rgba(34,197,94,0.2)] scale-105`;
-      case "ai_thinking":
-        return `${base} bg-yellow-500/10 shadow-[0_0_20px_rgba(234,179,8,0.15)]`;
-      case "ending":
-        return `${base} bg-destructive/10`;
-      case "connecting":
-        return `${base} bg-muted`;
-      case "error":
-        return `${base} bg-destructive/10`;
-      default:
-        return `${base} bg-muted/50`;
     }
   };
 
@@ -895,54 +938,16 @@ export function StreamInterview({
       {/* Central Voice Interface — scrollable so messages never overflow */}
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 px-4 py-8">
-          {/* Animated Orb */}
+          {/* Aura Visualizer */}
           <div className="flex flex-col items-center gap-4">
-            <div className={getOrbClasses()}>
-              {/* Pulse rings for speaking states */}
-              {(status === "ai_speaking" || status === "listening") && (
-                <>
-                  <div
-                    className={`absolute inset-0 rounded-full ${
-                      status === "ai_speaking"
-                        ? "bg-primary/5"
-                        : "bg-green-500/5"
-                    } animate-ping`}
-                    style={{ animationDuration: "2s" }}
-                  />
-                  <div
-                    className={`absolute inset-2 rounded-full ${
-                      status === "ai_speaking"
-                        ? "bg-primary/5"
-                        : "bg-green-500/5"
-                    } animate-ping`}
-                    style={{
-                      animationDuration: "2.5s",
-                      animationDelay: "0.5s",
-                    }}
-                  />
-                </>
-              )}
-
-              {/* Center Icon */}
-              {status === "connecting" && (
-                <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
-              )}
-              {status === "ai_speaking" && (
-                <Volume2 className="h-10 w-10 text-primary" />
-              )}
-              {status === "listening" && (
-                <Mic className="h-10 w-10 text-green-500" />
-              )}
-              {status === "ai_thinking" && (
-                <Loader2 className="h-10 w-10 animate-spin text-yellow-500" />
-              )}
-              {status === "ending" && (
-                <Loader2 className="h-10 w-10 animate-spin text-destructive" />
-              )}
-              {status === "ready" && (
-                <Mic className="h-10 w-10 text-muted-foreground/50" />
-              )}
-            </div>
+            <AgentAudioVisualizerAura
+              size="xl"
+              state={mapStatusToAgentState(status)}
+              color="#1FD5F9"
+              colorShift={0.15}
+              themeMode="dark"
+              volume={audioLevel}
+            />
 
             {/* Status Text */}
             <p className="text-xs text-muted-foreground">{getStatusText()}</p>
