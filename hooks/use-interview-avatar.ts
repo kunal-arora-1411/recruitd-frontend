@@ -63,6 +63,8 @@ interface AvatarRefs {
   morphMap:   MorphMap;
   avatarRoot: THREE.Object3D | null;
   mixer:      THREE.AnimationMixer | null;
+  idleAction: THREE.AnimationAction | null;
+  waveAction: THREE.AnimationAction | null;
   /** True when RPM viseme morph targets were discovered; false = jaw-only fallback. */
   hasVisemes: boolean;
 }
@@ -298,6 +300,8 @@ function buildScene(canvas: HTMLCanvasElement): AvatarRefs {
     },
     avatarRoot: null,
     mixer: null,
+    idleAction: null,
+    waveAction: null,
     hasVisemes: false,
   };
 }
@@ -628,6 +632,7 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
   // Mirror props into refs so the RAF loop never captures stale closures
   const voiceStatusRef  = useRef<VoiceStatus>(opts.voiceStatus);
   const analyserNodeRef = useRef<AnalyserNode | null>(opts.analyserNode);
+  const hasWavedRef     = useRef(false);
 
   useEffect(() => { voiceStatusRef.current  = opts.voiceStatus;  }, [opts.voiceStatus]);
   useEffect(() => { analyserNodeRef.current = opts.analyserNode; }, [opts.analyserNode]);
@@ -686,6 +691,37 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
 
         const node = analyserNodeRef.current;
         const status = voiceStatusRef.current;
+
+        // ── First-speak wave: trigger once when avatar first speaks ─
+        if (
+          status === "ai_speaking" &&
+          !hasWavedRef.current &&
+          r.waveAction &&
+          r.idleAction &&
+          r.mixer
+        ) {
+          hasWavedRef.current = true;
+
+          r.waveAction.reset();
+          r.waveAction.enabled = true;
+          r.waveAction.setEffectiveTimeScale(1);
+          r.waveAction.setEffectiveWeight(1);
+          r.idleAction.crossFadeTo(r.waveAction, 0.3, true);
+          r.waveAction.play();
+
+          const idleAction = r.idleAction;
+          const waveAction = r.waveAction;
+          const mixer = r.mixer;
+          function onWaveFinished(e: { action: THREE.AnimationAction }) {
+            if (e.action !== waveAction) return;
+            mixer.removeEventListener("finished", onWaveFinished);
+            idleAction.enabled = true;
+            idleAction.setEffectiveTimeScale(1);
+            idleAction.setEffectiveWeight(1);
+            waveAction.crossFadeTo(idleAction, 0.5, true);
+          }
+          r.mixer.addEventListener("finished", onWaveFinished);
+        }
 
         // ── Initialise / upgrade analyser buffers ───────────────────
         if (node && (!freqBufRef.current || !timeBufRef.current)) {
@@ -777,9 +813,26 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
                 const idleClip =
                   gltf.animations.find((a) => /idle/i.test(a.name)) ?? gltf.animations[0];
 
-                const action = mixer.clipAction(idleClip);
-                action.play();
+                const idleAction = mixer.clipAction(idleClip);
+                idleAction.play();
+                refs.idleAction = idleAction;
                 console.log(`[Avatar] Playing animation: "${idleClip.name}"`);
+
+                // Load waving animation clip for first-speak greeting
+                loader.load(
+                  "/waving.glb",
+                  (waveGltf) => {
+                    if (destroyed || !refs.mixer || waveGltf.animations.length === 0) return;
+                    const waveClip = waveGltf.animations[0];
+                    const waveAction = refs.mixer.clipAction(waveClip);
+                    waveAction.setLoop(THREE.LoopOnce, 1);
+                    waveAction.clampWhenFinished = true;
+                    refs.waveAction = waveAction;
+                    console.log(`[Avatar] Wave animation ready: "${waveClip.name}"`);
+                  },
+                  undefined,
+                  (err) => console.warn("[Avatar] Failed to load waving.glb:", err),
+                );
               } else {
                 console.warn("[Avatar] No animations — applying manual arm pose");
                 poseArmsDown(refs.scene);
