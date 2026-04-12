@@ -2,8 +2,8 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getStreamWSUrl, type JobTemplate } from "@/lib/api";
-import type { AgentState } from "@livekit/components-react";
-import { AgentAudioVisualizerAura } from "@/components/agent-audio-visualizer-aura";
+import type { VoiceStatus } from "@/lib/types";
+import { InterviewAvatar } from "@/components/interview-avatar-dynamic";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
 import { Card } from "@/components/ui/card";
@@ -25,16 +25,6 @@ import {
   AudioLines,
   BriefcaseBusiness,
 } from "lucide-react";
-
-type VoiceStatus =
-  | "connecting"
-  | "ready"
-  | "listening"
-  | "ai_speaking"
-  | "ai_thinking"
-  | "ending"
-  | "ended"
-  | "error";
 
 interface VoiceMessage {
   id: string;
@@ -820,25 +810,6 @@ export function StreamInterview({
 
   // ─── Status Display Helpers ────────────────────────────────────────
 
-  const mapStatusToAgentState = (s: VoiceStatus): AgentState => {
-    switch (s) {
-      case "connecting":
-        return "connecting";
-      case "ready":
-      case "listening":
-        return "listening";
-      case "ai_speaking":
-        return "speaking";
-      case "ai_thinking":
-        return "thinking";
-      case "ending":
-      case "ended":
-      case "error":
-      default:
-        return "disconnected";
-    }
-  };
-
   const getStatusText = () => {
     switch (status) {
       case "connecting":
@@ -897,84 +868,83 @@ export function StreamInterview({
   // ─── Main Voice UI ─────────────────────────────────────────────────
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-background">
-      {/* Hardware mic mute warning */}
-      {micMutedWarning && (
-        <div className="shrink-0 bg-amber-500/90 px-4 py-2 text-center text-xs font-medium text-white">
-          Your microphone is muted at the system level. Please unmute it (check
-          for a mic mute key on your keyboard, often F4) so the interviewer can
-          hear you.
-        </div>
-      )}
-      {/* Header */}
-      <header className="shrink-0 border-b border-border bg-card/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-primary-foreground">
-              <BriefcaseBusiness className="h-3 w-3" />
+    <div className="relative h-screen overflow-hidden bg-black">
+      {/* ── Avatar — full-screen background layer ──────────────────────── */}
+      <InterviewAvatar
+        voiceStatus={status}
+        analyserNode={analyserNodeRef.current}
+        className="absolute inset-0 w-full h-full"
+      />
+
+      {/* ── UI overlay — stacked on top of the avatar ──────────────────── */}
+      <div className="relative z-10 flex h-full flex-col">
+        {/* Hardware mic mute warning */}
+        {micMutedWarning && (
+          <div className="shrink-0 bg-amber-500/90 px-4 py-2 text-center text-xs font-medium text-white">
+            Your microphone is muted at the system level. Please unmute it
+            (check for a mic mute key on your keyboard, often F4) so the
+            interviewer can hear you.
+          </div>
+        )}
+
+        {/* Header */}
+        <header className="shrink-0 bg-black/40 backdrop-blur-md">
+          <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-primary-foreground">
+                <BriefcaseBusiness className="h-3 w-3" />
+              </div>
+              <span className="text-xs font-medium text-white">
+                {template.title}
+              </span>
             </div>
-            <span className="text-xs font-medium text-foreground">
-              {template.title}
-            </span>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="gap-1 text-[10px] border-white/20 text-white/70">
+                <AudioLines className="h-2.5 w-2.5" />
+                Voice
+              </Badge>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={requestEndInterview}
+                disabled={status === "ending"}
+                className="text-[10px] text-red-400 hover:text-red-300 hover:bg-white/10"
+              >
+                {status === "ending" ? "Ending..." : "End Interview"}
+              </Button>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="gap-1 text-[10px]">
-              <AudioLines className="h-2.5 w-2.5" />
-              Voice
-            </Badge>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={requestEndInterview}
-              disabled={status === "ending"}
-              className="text-[10px] text-destructive hover:text-destructive"
-            >
-              {status === "ending" ? "Ending..." : "End Interview"}
-            </Button>
-          </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Central Voice Interface — scrollable so messages never overflow */}
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-6 px-4 py-8">
-          {/* Aura Visualizer */}
-          <div className="flex flex-col items-center gap-4">
-            <AgentAudioVisualizerAura
-              size="xl"
-              state={mapStatusToAgentState(status)}
-              color="#1FD5F9"
-              colorShift={0.15}
-              themeMode="dark"
-              volume={audioLevel}
-            />
+        {/* Middle — transcript / messages float at the bottom of this area */}
+        <div className="flex-1 min-h-0 flex flex-col justify-end overflow-y-auto">
+          <div className="mx-auto w-full max-w-2xl flex flex-col gap-3 px-4 pb-4">
+            {/* Status pill */}
+            <div className="flex justify-center">
+              <span className="rounded-full bg-black/50 backdrop-blur-sm px-3 py-1 text-[10px] text-white/70">
+                {getStatusText()}
+              </span>
+            </div>
 
-            {/* Status Text */}
-            <p className="text-xs text-muted-foreground">{getStatusText()}</p>
+            {/* Live Transcript */}
+            {liveTranscript && (
+              <div className="rounded-xl border border-green-500/30 bg-green-500/10 backdrop-blur-sm px-4 py-3">
+                <p className="text-center text-xs font-medium text-white/90">
+                  {liveTranscript}
+                </p>
+                <p className="mt-1 text-center text-[10px] text-white/50">
+                  Listening...
+                </p>
+              </div>
+            )}
 
-            {/* Candidate Name */}
-            <p className="text-[10px] text-muted-foreground/60">
-              {candidateName}
-            </p>
-          </div>
-
-          {/* Live Transcript (shown while user is speaking) */}
-          {liveTranscript && (
-            <Card className="w-full max-w-md border-dashed border-green-500/40 bg-green-500/5 px-4 py-3 shadow-none">
-              <p className="text-center text-xs font-medium text-foreground/80">
-                {liveTranscript}
-              </p>
-              <p className="mt-1 text-center text-[10px] text-muted-foreground">
-                Listening...
-              </p>
-            </Card>
-          )}
-
-          {/* Message History */}
-          {messages.length > 0 && (
-            <Card className="w-full max-w-md shadow-sm">
-              <div ref={messagesScrollRef} className="max-h-64 overflow-y-auto">
-                <div className="space-y-3 p-4">
+            {/* Message History */}
+            {messages.length > 0 && (
+              <div
+                ref={messagesScrollRef}
+                className="max-h-48 overflow-y-auto rounded-xl bg-black/40 backdrop-blur-sm"
+              >
+                <div className="space-y-2 p-3">
                   {messages.map((msg) => (
                     <div
                       key={msg.id}
@@ -986,24 +956,21 @@ export function StreamInterview({
                         className={`max-w-[85%] rounded-lg px-3 py-2 ${
                           msg.speaker === "user"
                             ? "bg-primary text-primary-foreground"
-                            : "bg-muted"
+                            : "bg-white/10 text-white/90"
                         }`}
                       >
-                        <p className="text-[11px] leading-relaxed">
-                          {msg.text}
-                        </p>
+                        <p className="text-[11px] leading-relaxed">{msg.text}</p>
                       </div>
                     </div>
                   ))}
                 </div>
               </div>
-            </Card>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Bottom Controls */}
-      <div className="shrink-0 border-t border-border bg-card/80 backdrop-blur-sm">
+        {/* Bottom Controls */}
+        <div className="shrink-0 bg-black/40 backdrop-blur-md">
         <div className="mx-auto flex max-w-2xl items-center justify-center gap-4 px-4 py-4">
           {/* Mute Toggle with Audio Level Ring */}
           <div className="relative flex items-center justify-center">
@@ -1059,12 +1026,13 @@ export function StreamInterview({
           </Button>
         </div>
 
-        <p className="pb-3 text-center text-[10px] text-muted-foreground/60">
+        <p className="pb-3 text-center text-[10px] text-white/40">
           {isMuted
             ? "Microphone muted — click to unmute"
             : "Speak naturally — the AI will respond when you pause"}
         </p>
-      </div>
+      </div>{/* end Bottom Controls */}
+      </div>{/* end z-10 overlay */}
 
       {/* End Interview Confirmation Dialog */}
       <Dialog
