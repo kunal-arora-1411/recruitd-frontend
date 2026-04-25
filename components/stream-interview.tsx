@@ -9,6 +9,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3100";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +25,13 @@ import {
   Loader2,
   AudioLines,
   BriefcaseBusiness,
+  Sparkles,
+  User,
+  MessageSquare,
+  NotebookPen,
+  Send,
+  X,
+  Check,
 } from "lucide-react";
 
 interface VoiceMessage {
@@ -55,6 +63,10 @@ export function StreamInterview({
   const [audioLevel, setAudioLevel] = useState(0);
   const [showEndConfirmDialog, setShowEndConfirmDialog] = useState(false);
   const [micMutedWarning, setMicMutedWarning] = useState(false);
+  const [notepadOpen, setNotepadOpen] = useState(false);
+  const [notepadContent, setNotepadContent] = useState("");
+  const [notepadStatus, setNotepadStatus] =
+    useState<"idle" | "sharing" | "shared">("idle");
 
   const wsRef = useRef<WebSocket | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
@@ -764,6 +776,20 @@ export function StreamInterview({
     }
   };
 
+  const handleShareNotepad = () => {
+    const trimmed = notepadContent.trim();
+    if (!trimmed) return;
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    if (notepadStatus === "sharing") return;
+
+    setNotepadStatus("sharing");
+    wsRef.current.send(
+      JSON.stringify({ type: "share_notepad", content: trimmed }),
+    );
+    setNotepadStatus("shared");
+    setTimeout(() => setNotepadStatus("idle"), 2500);
+  };
+
   // ─── Cleanup ───────────────────────────────────────────────────────
 
   const cleanup = () => {
@@ -867,114 +893,342 @@ export function StreamInterview({
 
   // ─── Main Voice UI ─────────────────────────────────────────────────
 
+  // Split the message stream into the active question, the user's answer so
+  // far, and the prior history.  The "current question" is the most recent AI
+  // utterance; anything the user has said after it counts as the in-progress
+  // response; everything before it is archived history.
+  const lastAiIdx = (() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].speaker === "ai") return i;
+    }
+    return -1;
+  })();
+  const currentQuestion = lastAiIdx >= 0 ? messages[lastAiIdx].text : null;
+  const answerSoFar =
+    lastAiIdx >= 0
+      ? messages
+          .slice(lastAiIdx + 1)
+          .filter((m) => m.speaker === "user")
+          .map((m) => m.text)
+          .join(" ")
+      : "";
+  const pastMessages = lastAiIdx > 0 ? messages.slice(0, lastAiIdx) : [];
+
+  const statusDotColor =
+    status === "ai_speaking"
+      ? "bg-blue-400 animate-pulse"
+      : status === "listening"
+        ? "bg-green-400 animate-pulse"
+        : status === "ai_thinking"
+          ? "bg-amber-400 animate-pulse"
+          : status === "ready"
+            ? "bg-emerald-400"
+            : "bg-white/30";
+
   return (
-    <div className="relative h-screen overflow-hidden bg-black">
-      {/* ── Avatar — full-screen background layer ──────────────────────── */}
-      <InterviewAvatar
-        voiceStatus={status}
-        analyserNode={analyserNodeRef.current}
-        className="absolute inset-0 w-full h-full"
+    <div className="relative flex h-screen flex-col overflow-hidden bg-[#050f24]">
+      {/* Layered bluish atmosphere — replaces the old black "video call" frame */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#0a1c3e] via-[#0b2150] to-[#112c66]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_55%_55%_at_32%_28%,_rgba(59,130,246,0.28),_transparent_70%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_45%_45%_at_78%_82%,_rgba(99,102,241,0.18),_transparent_70%)]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_115%,_rgba(14,165,233,0.18),_transparent_75%)]"
       />
 
-      {/* ── UI overlay — stacked on top of the avatar ──────────────────── */}
-      <div className="relative z-10 flex h-full flex-col">
-        {/* Hardware mic mute warning */}
-        {micMutedWarning && (
-          <div className="shrink-0 bg-amber-500/90 px-4 py-2 text-center text-xs font-medium text-white">
-            Your microphone is muted at the system level. Please unmute it
-            (check for a mic mute key on your keyboard, often F4) so the
-            interviewer can hear you.
+      {/* Full-viewport 3D avatar — lives freely in the scene, not in a box.
+          pointer events kept active so the canvas can receive pinch / wheel zoom. */}
+      <div className="absolute inset-0 z-0">
+        <InterviewAvatar
+          voiceStatus={status}
+          analyserNode={analyserNodeRef.current}
+          className="h-full w-full"
+        />
+      </div>
+
+      {/* Hardware mic mute warning */}
+      {micMutedWarning && (
+        <div className="relative z-20 shrink-0 bg-amber-500/90 px-4 py-2 text-center text-xs font-medium text-white">
+          Your microphone is muted at the system level. Please unmute it (check
+          for a mic mute key on your keyboard, often F4) so the interviewer can
+          hear you.
+        </div>
+      )}
+
+      {/* Header — transparent, floats over the scene */}
+      <header className="relative z-10 shrink-0">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+          <div className="flex items-center gap-2">
+            <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-primary-foreground">
+              <BriefcaseBusiness className="h-3 w-3" />
+            </div>
+            <span className="text-xs font-medium text-white">
+              {template.title}
+            </span>
           </div>
-        )}
-
-        {/* Header */}
-        <header className="shrink-0 bg-black/40 backdrop-blur-md">
-          <div className="mx-auto flex max-w-2xl items-center justify-between px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="flex h-5 w-5 items-center justify-center rounded bg-primary text-primary-foreground">
-                <BriefcaseBusiness className="h-3 w-3" />
-              </div>
-              <span className="text-xs font-medium text-white">
-                {template.title}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className="gap-1 text-[10px] border-white/20 text-white/70">
-                <AudioLines className="h-2.5 w-2.5" />
-                Voice
-              </Badge>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={requestEndInterview}
-                disabled={status === "ending"}
-                className="text-[10px] text-red-400 hover:text-red-300 hover:bg-white/10"
-              >
-                {status === "ending" ? "Ending..." : "End Interview"}
-              </Button>
-            </div>
+          <div className="flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="gap-1 border-white/20 bg-white/5 text-[10px] text-white/80 backdrop-blur-md"
+            >
+              <AudioLines className="h-2.5 w-2.5" />
+              Voice
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={requestEndInterview}
+              disabled={status === "ending"}
+              className="text-[10px] text-red-300 hover:bg-white/10 hover:text-red-200"
+            >
+              {status === "ending" ? "Ending..." : "End Interview"}
+            </Button>
           </div>
-        </header>
+        </div>
+      </header>
 
-        {/* Middle — transcript / messages float at the bottom of this area */}
-        <div className="flex-1 min-h-0 flex flex-col justify-end overflow-y-auto">
-          <div className="mx-auto w-full max-w-2xl flex flex-col gap-3 px-4 pb-4">
-            {/* Status pill */}
-            <div className="flex justify-center">
-              <span className="rounded-full bg-black/50 backdrop-blur-sm px-3 py-1 text-[10px] text-white/70">
-                {getStatusText()}
-              </span>
-            </div>
+      {/* Floating status + name pills — anchored near the avatar, no container */}
+      <div className="pointer-events-none absolute bottom-32 left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-1.5 lg:left-[33%]">
+        <span className="flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-[11px] font-medium text-white/90 backdrop-blur-md">
+          <span className={`h-2 w-2 rounded-full ${statusDotColor}`} />
+          {getStatusText()}
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-2.5 py-1 text-[10px] text-white/60 backdrop-blur-sm">
+          <User className="h-3 w-3" />
+          {candidateName}
+        </span>
+      </div>
 
-            {/* Live Transcript */}
-            {liveTranscript && (
-              <div className="rounded-xl border border-green-500/30 bg-green-500/10 backdrop-blur-sm px-4 py-3">
-                <p className="text-center text-xs font-medium text-white/90">
-                  {liveTranscript}
-                </p>
-                <p className="mt-1 text-center text-[10px] text-white/50">
-                  Listening...
-                </p>
+      {/* Dialogue — floating glass column on the right, no surrounding frame.
+          The wrapper + section are pointer-events-none so pinch/wheel zoom
+          passes through their empty gaps to the avatar canvas beneath; each
+          panel re-enables pointer events on itself. */}
+      <div className="pointer-events-none relative z-10 flex min-h-0 flex-1 justify-end">
+        <section className="pointer-events-none flex min-h-0 w-full flex-col gap-3 overflow-hidden p-4 lg:w-[440px] lg:p-5">
+          {/* Current Question */}
+          <div className="pointer-events-auto shrink-0 rounded-2xl border border-white/15 bg-white/[0.06] p-5 shadow-2xl shadow-black/30 backdrop-blur-xl">
+            <div className="mb-3 flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-400/20 text-sky-300">
+                <Sparkles className="h-3.5 w-3.5" />
               </div>
-            )}
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-sky-200">
+                Interviewer
+              </span>
+              {status === "ai_speaking" && (
+                <span className="ml-1 flex items-center gap-1 text-[10px] text-white/60">
+                  <AudioLines className="h-3 w-3 animate-pulse" />
+                  speaking…
+                </span>
+              )}
+            </div>
+            <p className="text-base font-medium leading-relaxed text-white sm:text-lg">
+              {currentQuestion ??
+                (status === "connecting"
+                  ? "Connecting to your interviewer…"
+                  : "Getting ready to start the interview…")}
+            </p>
+          </div>
 
-            {/* Message History */}
-            {messages.length > 0 && (
+          {/* Your Response */}
+          <div
+            className={`pointer-events-auto shrink-0 rounded-2xl border p-5 backdrop-blur-xl transition-colors ${
+              liveTranscript
+                ? "border-green-400/40 bg-green-500/10"
+                : "border-white/10 bg-white/[0.04]"
+            }`}
+          >
+            <div className="mb-3 flex items-center gap-2">
               <div
-                ref={messagesScrollRef}
-                className="max-h-48 overflow-y-auto rounded-xl bg-black/40 backdrop-blur-sm"
+                className={`flex h-6 w-6 items-center justify-center rounded-full ${
+                  liveTranscript
+                    ? "bg-green-400/20 text-green-300"
+                    : "bg-white/10 text-white/60"
+                }`}
               >
-                <div className="space-y-2 p-3">
-                  {messages.map((msg) => (
+                <Mic className="h-3.5 w-3.5" />
+              </div>
+              <span
+                className={`text-[11px] font-semibold uppercase tracking-wider ${
+                  liveTranscript ? "text-green-300" : "text-white/60"
+                }`}
+              >
+                {liveTranscript ? "You're speaking…" : "Your response"}
+              </span>
+            </div>
+            <p
+              className={`text-sm leading-relaxed ${
+                liveTranscript || answerSoFar
+                  ? "text-white/95"
+                  : "italic text-white/45"
+              }`}
+            >
+              {liveTranscript ||
+                answerSoFar ||
+                (currentQuestion
+                  ? "Start speaking to answer the question above."
+                  : "Your response will appear here as you speak.")}
+            </p>
+          </div>
+
+          {/* Past conversation history */}
+          <div className="pointer-events-auto flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl">
+            <div className="flex shrink-0 items-center gap-2 border-b border-white/10 px-5 py-3">
+              <MessageSquare className="h-3.5 w-3.5 text-white/50" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-white/60">
+                Past conversation
+              </span>
+              {pastMessages.length > 0 && (
+                <Badge
+                  variant="outline"
+                  className="ml-auto border-white/20 bg-white/5 text-[10px] text-white/70"
+                >
+                  {pastMessages.length}
+                </Badge>
+              )}
+            </div>
+            <div
+              ref={messagesScrollRef}
+              className="min-h-0 flex-1 overflow-y-auto"
+            >
+              {pastMessages.length === 0 ? (
+                <p className="px-5 py-8 text-center text-xs text-white/40">
+                  Earlier questions and answers will appear here as the
+                  interview progresses.
+                </p>
+              ) : (
+                <div className="space-y-3 p-5">
+                  {pastMessages.map((msg) => (
                     <div
                       key={msg.id}
-                      className={`flex gap-2 ${
+                      className={`flex items-start gap-2 ${
                         msg.speaker === "user" ? "flex-row-reverse" : ""
                       }`}
                     >
                       <div
-                        className={`max-w-[85%] rounded-lg px-3 py-2 ${
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${
+                          msg.speaker === "user"
+                            ? "bg-primary/20 text-primary"
+                            : "bg-white/10 text-white/70"
+                        }`}
+                      >
+                        {msg.speaker === "user" ? (
+                          <User className="h-3.5 w-3.5" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                      </div>
+                      <div
+                        className={`max-w-[80%] rounded-lg px-3.5 py-2.5 ${
                           msg.speaker === "user"
                             ? "bg-primary text-primary-foreground"
                             : "bg-white/10 text-white/90"
                         }`}
                       >
-                        <p className="text-[11px] leading-relaxed">{msg.text}</p>
+                        <p className="text-xs leading-relaxed">{msg.text}</p>
                       </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+          </div>
+        </section>
+      </div>
+
+      {/* Notepad — floating glass panel on the left.  Candidates type code /
+          equations / notes and click Share to send the contents to the AI
+          interviewer as a conversation turn. */}
+      {notepadOpen && (
+        <div className="pointer-events-auto absolute bottom-28 left-4 top-16 z-20 flex w-[calc(100%-2rem)] max-w-[420px] flex-col overflow-hidden rounded-2xl border border-white/15 bg-white/[0.08] shadow-2xl shadow-black/40 backdrop-blur-2xl lg:left-5 lg:top-14 lg:bottom-24">
+          <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <NotebookPen className="h-4 w-4 text-sky-300" />
+              <span className="text-xs font-semibold text-white">
+                Your notepad
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNotepadOpen(false)}
+              className="text-white/60 transition-colors hover:text-white"
+              aria-label="Close notepad"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <p className="shrink-0 px-4 pt-3 text-[10px] leading-relaxed text-white/55">
+            Use this space to draft code, equations, or rough work while you
+            think. Click{" "}
+            <span className="font-medium text-white/85">
+              Share with interviewer
+            </span>{" "}
+            to send what you've written to the AI for review.
+          </p>
+          <div className="flex-1 min-h-0 p-4">
+            <Textarea
+              value={notepadContent}
+              onChange={(e) => {
+                setNotepadContent(e.target.value);
+                if (notepadStatus === "shared") setNotepadStatus("idle");
+              }}
+              placeholder={
+                "Jot down your working here…\n\nExample:\n  def solve(n):\n      total = 0\n      for i in range(n):\n          total += i\n      return total"
+              }
+              spellCheck={false}
+              className="h-full w-full resize-none border-white/10 bg-black/30 font-mono text-xs leading-relaxed text-white/95 placeholder:text-white/30 focus-visible:border-sky-400/40 focus-visible:ring-sky-400/20"
+            />
+          </div>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-t border-white/10 px-4 py-3">
+            <span className="text-[10px] text-white/45">
+              {notepadContent.length} chars
+            </span>
+            <Button
+              size="sm"
+              onClick={handleShareNotepad}
+              disabled={
+                !notepadContent.trim() ||
+                notepadStatus === "sharing" ||
+                status === "connecting" ||
+                status === "ending" ||
+                status === "ended"
+              }
+              className="h-8 gap-1.5 text-[11px]"
+            >
+              {notepadStatus === "shared" ? (
+                <>
+                  <Check className="h-3.5 w-3.5" />
+                  Shared with interviewer
+                </>
+              ) : notepadStatus === "sharing" ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Sharing…
+                </>
+              ) : (
+                <>
+                  <Send className="h-3.5 w-3.5" />
+                  Share with interviewer
+                </>
+              )}
+            </Button>
           </div>
         </div>
+      )}
 
-        {/* Bottom Controls */}
-        <div className="shrink-0 bg-black/40 backdrop-blur-md">
-        <div className="mx-auto flex max-w-2xl items-center justify-center gap-4 px-4 py-4">
+      {/* Bottom Controls — transparent, floating */}
+      <div className="relative z-10 shrink-0">
+        <div className="mx-auto flex max-w-7xl items-center justify-center gap-4 px-6 py-4">
           {/* Mute Toggle with Audio Level Ring */}
           <div className="relative flex items-center justify-center">
-            {/* Audio level ring — only visible when unmuted and picking up sound */}
             {!isMuted && audioLevel > 0.01 && (
               <div
                 className="absolute inset-0 rounded-full border-2 border-green-500/60"
@@ -999,7 +1253,11 @@ export function StreamInterview({
               variant={isMuted ? "destructive" : "outline"}
               size="lg"
               onClick={toggleMute}
-              className="relative z-10 h-14 w-14 rounded-full p-0"
+              className={`relative z-10 h-14 w-14 rounded-full p-0 backdrop-blur-md ${
+                isMuted
+                  ? ""
+                  : "border-white/25 bg-white/[0.08] text-white hover:bg-white/15"
+              }`}
               disabled={status === "connecting" || status === "ending"}
             >
               {isMuted ? (
@@ -1010,12 +1268,27 @@ export function StreamInterview({
             </Button>
           </div>
 
-          {/* End Interview */}
+          {/* Notepad toggle — opens the scratchpad overlay */}
+          <Button
+            variant="outline"
+            size="lg"
+            onClick={() => setNotepadOpen((v) => !v)}
+            className={`relative h-14 w-14 rounded-full border-white/25 bg-white/[0.08] p-0 text-white backdrop-blur-md hover:bg-white/15 ${
+              notepadOpen ? "ring-2 ring-sky-300/60" : ""
+            }`}
+            aria-label="Notepad"
+          >
+            <NotebookPen className="h-5 w-5" />
+            {notepadContent.trim().length > 0 && !notepadOpen && (
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-sky-300 shadow-[0_0_6px_rgba(125,211,252,0.9)]" />
+            )}
+          </Button>
+
           <Button
             variant="destructive"
             size="lg"
             onClick={requestEndInterview}
-            className="h-14 w-14 rounded-full p-0"
+            className="h-14 w-14 rounded-full p-0 shadow-lg shadow-red-900/30"
             disabled={status === "ending"}
           >
             {status === "ending" ? (
@@ -1032,7 +1305,6 @@ export function StreamInterview({
             : "Speak naturally — the AI will respond when you pause"}
         </p>
       </div>{/* end Bottom Controls */}
-      </div>{/* end z-10 overlay */}
 
       {/* End Interview Confirmation Dialog */}
       <Dialog

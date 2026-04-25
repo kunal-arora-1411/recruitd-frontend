@@ -656,12 +656,78 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
     let destroyed = false;
     let initRafId = 0;
     let ro: ResizeObserver | null = null;
+    const listenerCleanup: Array<() => void> = [];
 
     initRafId = requestAnimationFrame(() => {
       if (destroyed) return;
 
       const refs = buildScene(canvas);
       avatarRefsRef.current = refs;
+
+      // ── Zoom (pinch + wheel) ─────────────────────────────────────────
+      // baseCameraDist and cameraTargetY are populated once the GLB loads
+      // and the camera is fit to the torso.  Until then, the default scene
+      // camera (set in buildScene) is used.
+      const zoom = { factor: 1, baseDist: 3, targetY: 0, ready: false };
+      const MIN_ZOOM = 0.6;
+      const MAX_ZOOM = 3.0;
+
+      const applyZoom = () => {
+        const r = avatarRefsRef.current;
+        if (!r || !zoom.ready) return;
+        const dist = zoom.baseDist / zoom.factor;
+        r.camera.position.set(0, zoom.targetY, dist);
+        r.camera.lookAt(0, zoom.targetY, 0);
+        r.camera.far = Math.max(10, dist * 3);
+        r.camera.updateProjectionMatrix();
+      };
+
+      const onWheel = (e: WheelEvent) => {
+        if (!zoom.ready) return;
+        e.preventDefault();
+        const scale = Math.exp(-e.deltaY * 0.0015);
+        zoom.factor = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom.factor * scale));
+        applyZoom();
+      };
+
+      let pinchStartDist = 0;
+      let pinchStartFactor = 1;
+      const onTouchStart = (e: TouchEvent) => {
+        if (e.touches.length === 2) {
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          pinchStartDist = Math.hypot(dx, dy);
+          pinchStartFactor = zoom.factor;
+        }
+      };
+      const onTouchMove = (e: TouchEvent) => {
+        if (!zoom.ready) return;
+        if (e.touches.length === 2 && pinchStartDist > 0) {
+          e.preventDefault();
+          const dx = e.touches[0].clientX - e.touches[1].clientX;
+          const dy = e.touches[0].clientY - e.touches[1].clientY;
+          const d = Math.hypot(dx, dy);
+          zoom.factor = Math.max(
+            MIN_ZOOM,
+            Math.min(MAX_ZOOM, pinchStartFactor * (d / pinchStartDist)),
+          );
+          applyZoom();
+        }
+      };
+      const onTouchEnd = () => { pinchStartDist = 0; };
+
+      canvas.addEventListener("wheel", onWheel, { passive: false });
+      canvas.addEventListener("touchstart", onTouchStart, { passive: true });
+      canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+      canvas.addEventListener("touchend", onTouchEnd);
+      canvas.addEventListener("touchcancel", onTouchEnd);
+      listenerCleanup.push(() => {
+        canvas.removeEventListener("wheel", onWheel);
+        canvas.removeEventListener("touchstart", onTouchStart);
+        canvas.removeEventListener("touchmove", onTouchMove);
+        canvas.removeEventListener("touchend", onTouchEnd);
+        canvas.removeEventListener("touchcancel", onTouchEnd);
+      });
 
       // ── ResizeObserver ───────────────────────────────────────────────
       ro = new ResizeObserver((entries) => {
@@ -774,7 +840,10 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
         setMorph(m, r.morphMap.eyeBlinkR, blink, 1.0);
 
         // ── Idle head bob ────────────────────────────────────────────
+        // rotation.x holds a constant forward tilt so the avatar's gaze
+        // reads as "looking at the user" rather than staring slightly upward
         if (r.avatarRoot) {
+          r.avatarRoot.rotation.x = 0.18;
           r.avatarRoot.rotation.y = Math.sin(elapsed * 1.5)       * 0.026;
           r.avatarRoot.rotation.z = Math.sin(elapsed * 0.9 + 1.2) * 0.009;
         }
@@ -858,6 +927,11 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
               refs.camera.far = fitDist * 3;
               refs.camera.updateProjectionMatrix();
 
+              // Unlock pinch / wheel zoom now that the camera is fit
+              zoom.baseDist = fitDist;
+              zoom.targetY  = torsoCenterY;
+              zoom.ready    = true;
+
               // ── Discover morphs & visemes ──────────────────────────────
               const { mesh, map, hasVisemes } = discoverMorphMap(refs.scene);
               refs.headMesh   = mesh;
@@ -894,6 +968,7 @@ export function useInterviewAvatar(opts: UseInterviewAvatarOptions): {
       }
 
       ro?.disconnect();
+      listenerCleanup.forEach((fn) => fn());
 
       if (avatarRefsRef.current) {
         disposeScene(avatarRefsRef.current);
