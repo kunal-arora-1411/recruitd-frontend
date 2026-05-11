@@ -1198,8 +1198,7 @@ export function StreamInterview({
                 !notepadContent.trim() ||
                 notepadStatus === "sharing" ||
                 status === "connecting" ||
-                status === "ending" ||
-                status === "ended"
+                status === "ending"
               }
               className="h-8 gap-1.5 text-[11px]"
             >
