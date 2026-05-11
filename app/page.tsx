@@ -120,7 +120,7 @@ export default function HomePage() {
                     className="h-14 w-full justify-between rounded-2xl text-base font-semibold group primary-gradient"
                     onClick={() => openPortal("admin")}
                   >
-                    <span>Admin Portal</span>
+                    <span>Admin  Portal</span>
                     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/20 transition-transform group-hover:translate-x-1">
                       <ArrowRight className="h-4 w-4" />
                     </div>
